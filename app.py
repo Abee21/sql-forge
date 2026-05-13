@@ -258,7 +258,7 @@ def dashboard_view():
     cfg = LEVELS[lvl]
     acc = round((s["correct"] / s["total"]) * 100) if s["total"] > 0 else 0
     avg_time = round(sum(s["times"]) / len(s["times"])) if s["times"] else 0
-    avg_syntax = round(sum(s["syntax_scores"]) / len(s["syntax_scores"])) if s["syntax_scores"] else 0
+    avg_syntax = round(sum(s.get("syntax_scores",[])) / len(s.get("syntax_scores",[1]))) if s.get("syntax_scores") else 0
     today = date.today()
     last = st.session_state.last_practice_date
     consecutive = 0
