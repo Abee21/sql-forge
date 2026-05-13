@@ -1,14 +1,15 @@
-import anthropic
+import google.generativeai as genai
 import json
 
 
 def evaluate_answer(schema_info: str, question: str, concept: str,
                     sample_answer: str, user_sql: str, api_key: str) -> dict:
     """
-    Use Claude to evaluate if the user's SQL is logically correct.
+    Use Google Gemini to evaluate if the user's SQL is logically correct.
     Returns: {"correct": bool, "score": int, "explanation": str, "tip": str}
     """
-    client = anthropic.Anthropic(api_key=api_key)
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
     prompt = f"""You are a strict PostgreSQL SQL evaluator.
 
@@ -28,16 +29,12 @@ Evaluate: does the student's SQL logically solve the question correctly?
 - Wrong table, missing JOIN, wrong aggregation = incorrect
 - Partially correct = give partial score
 
-Return ONLY raw JSON, no markdown:
+Return ONLY raw JSON, no markdown, no explanation:
 {{"correct": true, "score": 85, "explanation": "Your feedback here.", "tip": "One improvement tip."}}"""
 
     try:
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        raw = message.content[0].text.strip()
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
     except Exception as e:
