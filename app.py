@@ -7,7 +7,7 @@ from datetime import datetime, date
 from question_generator import get_questions
 from evaluator import evaluate_answer
 
-st.set_page_config(page_title="SQL Forge", page_icon="⬡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="SQL Forge", page_icon="⬡", layout="wide", initial_sidebar_state="expanded", menu_items={})
 
 st.markdown("""
 <style>
@@ -15,7 +15,10 @@ st.markdown("""
 html, body, [class*="css"] { font-family: 'Space Grotesk', sans-serif !important; }
 .stApp { background: #080c14; }
 section[data-testid="stSidebar"] { background: #0c1220 !important; border-right: 1px solid #1a2535; }
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header { visibility: visible !important; background: #080c14 !important; }
+[data-testid="collapsedControl"] { background: #00ff9d !important; border-radius: 8px !important; color: #080c14 !important; }
 .block-container { padding-top: 1rem !important; }
 .stTextArea textarea {
     background: #060a10 !important; color: #e2f0ff !important;
