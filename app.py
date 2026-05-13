@@ -552,6 +552,16 @@ elif st.session_state.stage == "practice":
             <div style='color:#e2f0ff;font-size:14px;font-weight:500;line-height:1.7'>{q["question"]}</div>
         </div>""", unsafe_allow_html=True)
 
+        # Inline schema reference
+        schema_html = "<div style='background:#060a10;border:1px solid #1a2535;border-radius:8px;padding:10px;margin-bottom:10px'>"
+        schema_html += "<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:8px'>📋 SCHEMA REFERENCE — use these exact table & column names</div>"
+        schema_html += "<div style='display:flex;flex-wrap:wrap;gap:20px'>"
+        for tname, df in st.session_state.tables.items():
+            cols_str = "  ".join([f"<span style='color:#f59e0b'>{c}</span>" for c in df.columns])
+            schema_html += f"<div><div style='color:#00ff9d;font-size:12px;font-weight:700;margin-bottom:4px'>⬡ {tname} <span style=\'color:#4a6080;font-size:10px\'>{len(df)} rows</span></div><div style=\'font-size:11px;line-height:1.8\'>{cols_str}</div></div>"
+        schema_html += "</div></div>"
+        st.markdown(schema_html, unsafe_allow_html=True)
+
         st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>SQL EDITOR</div>", unsafe_allow_html=True)
         user_sql = st.text_area("", value=st.session_state.user_sql, height=165,
             placeholder="-- Write your PostgreSQL query here\nSELECT ...",
