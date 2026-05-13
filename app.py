@@ -1,4 +1,5 @@
 import streamlit as st
+import re
 import pandas as pd
 import duckdb
 import os
@@ -141,7 +142,8 @@ def parse_file(f):
     tables = {}
     if ext == "csv":
         df = pd.read_csv(f)
-        name = f.name.rsplit(".", 1)[0].replace(" ", "_").replace("-","_").lower()
+        name = re.sub(r"[^a-zA-Z0-9]", "_", f.name.rsplit(".", 1)[0]).lower().strip("_")
+        name = re.sub(r"_+", "_", name)  # remove duplicate underscores
         tables[name] = df
     elif ext in ["xlsx","xls"]:
         xf = pd.ExcelFile(f)
