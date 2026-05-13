@@ -244,9 +244,9 @@ if st.session_state.stage == "upload":
     # API key input if not set
     api_key = get_api_key()
     if not api_key:
-        st.markdown("#### 🔑 Anthropic API Key")
+        st.markdown("#### 🔑 Gemini API Key")
         st.markdown("<small style='color:#4a5568'>Needed only for answer evaluation. Question generation is free.</small>", unsafe_allow_html=True)
-        key_input = st.text_input("Enter your Anthropic API key", type="password", placeholder="sk-ant-...")
+        key_input = st.text_input("Enter your Gemini API key", type="password", placeholder="sk-ant-...")
         if key_input:
             st.session_state["api_key"] = key_input
         st.markdown("---")
