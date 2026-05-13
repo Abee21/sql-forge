@@ -739,25 +739,37 @@ elif st.session_state.stage == "practice":
             explanation = fb.get("explanation","")
             tip = fb.get("tip","")
 
-            st.markdown(f"""
-            <div style='background:{bg};border:1px solid {bc}44;border-radius:10px;padding:14px;margin-top:10px'>
-                <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
-                    <span style='color:{bc};font-size:17px;font-weight:700'>{icon}</span>
-                    <span style='color:{bc};font-weight:700;font-size:14px'>{result_label}</span>
-                    <span style='color:#4a6080;font-size:10px;margin-left:auto'>Score: <b style='color:{score_color}'>{score}/100</b></span>
-                    {xp_html}
-                </div>
-                <div style='color:#c0d0e0;font-size:13px;line-height:1.7;margin-bottom:10px'>{explanation}</div>
-                <div style='color:#4a6080;font-size:12px;margin-bottom:10px'><span style='color:#00ff9d'>tip: </span>{tip}</div>
-                <div style='display:flex;gap:16px;border-top:1px solid #1a2535;padding-top:10px;flex-wrap:wrap'>
-                    <span style='color:#4a6080;font-size:11px'>⏱ Time: <b style='color:{time_color}'>{elapsed}s</b></span>
-                    <span style='color:#4a6080;font-size:11px'>📊 Score: <b style='color:{score_color}'>{score}/100</b></span>
-                    <span style='color:#4a6080;font-size:11px'>🎯 Streak: <b style='color:#00ff9d'>{st.session_state.streak}/15</b></span>
-                    <span style='color:#4a6080;font-size:11px'>⚡ Mode: <b style='color:{mode_color}'>{st.session_state.mode}</b></span>
-                    {speed_html}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Render feedback using individual st components — avoids f-string HTML bugs
+            border = f"3px solid {bc}"
+            st.markdown(f"<div style='border-left:{border};padding-left:14px;margin-top:12px'>", unsafe_allow_html=True)
+
+            # Header row
+            header_col1, header_col2 = st.columns([3,1])
+            with header_col1:
+                st.markdown(f"<div style='color:{bc};font-size:18px;font-weight:800'>{icon} {result_label}</div>", unsafe_allow_html=True)
+                if xp_msg:
+                    st.markdown(f"<div style='color:#c084fc;font-size:13px;font-weight:700'>{xp_msg}</div>", unsafe_allow_html=True)
+            with header_col2:
+                st.markdown(f"<div style='text-align:right;color:{score_color};font-size:22px;font-weight:800'>{score}<span style='color:#4a6080;font-size:12px'>/100</span></div>", unsafe_allow_html=True)
+
+            # Explanation
+            st.markdown(f"<div style='color:#c0d0e0;font-size:13px;line-height:1.7;margin:10px 0 6px;background:#0c1220;padding:12px;border-radius:8px'>{explanation}</div>", unsafe_allow_html=True)
+
+            # Tip
+            if tip:
+                st.markdown(f"<div style='color:#4a6080;font-size:12px;margin-bottom:10px'>💡 <span style='color:#00ff9d'>tip:</span> {tip}</div>", unsafe_allow_html=True)
+
+            # Stats row
+            m1,m2,m3,m4 = st.columns(4)
+            m1.metric("Time", f"{elapsed}s")
+            m2.metric("Score", f"{score}/100")
+            m3.metric("Streak", f"{st.session_state.streak}/15")
+            m4.metric("Mode", st.session_state.mode)
+
+            if elapsed < 60 and is_correct:
+                st.markdown("<div style='color:#00ff9d;font-size:12px;font-weight:700'>⚡ Speed bonus earned!</div>", unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
             if st.button("Next Question →"): next_q()
 
