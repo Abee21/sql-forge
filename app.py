@@ -98,7 +98,7 @@ def init():
         "feedback": None, "user_sql": "", "file_name": "",
         "query_result": None, "query_error": None, "query_ran": False,
         "xp": 0, "hint_used": False, "answer_used": False,
-        "q_start_time": None, "mode": "Hero",
+        "q_start_time": None, "mode": "Hero", "paste_detected": False, "keystrokes": 0,
         "streak_days": [], "last_practice_date": None,
         "penalty_applied_today": False, "demoted": False,
         "total_attempted": 0, "consecutive_correct": 0,
@@ -170,7 +170,8 @@ def start_level(lvl):
         "user_sql": "", "level": lvl, "stage": "practice",
         "query_result": None, "query_error": None, "query_ran": False,
         "hint_used": False, "answer_used": False,
-        "q_start_time": datetime.now(), "consecutive_correct": 0
+        "q_start_time": datetime.now(), "consecutive_correct": 0,
+        "paste_detected": False, "keystrokes": 0
     })
     st.rerun()
 
@@ -180,7 +181,8 @@ def next_q():
         "feedback": None, "user_sql": "", "query_result": None,
         "query_error": None, "query_ran": False,
         "hint_used": False, "answer_used": False,
-        "q_start_time": datetime.now()
+        "q_start_time": datetime.now(),
+        "paste_detected": False, "keystrokes": 0
     })
     st.rerun()
 
@@ -565,10 +567,34 @@ elif st.session_state.stage == "practice":
         st.markdown(schema_html, unsafe_allow_html=True)
 
         st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>SQL EDITOR</div>", unsafe_allow_html=True)
+
+        # Paste detection via JS
+        st.components.v1.html("""
+        <script>
+        window.parent.document.addEventListener('paste', function(e) {
+            var active = window.parent.document.activeElement;
+            if (active && active.tagName === 'TEXTAREA') {
+                window.parent.sessionStorage.setItem('paste_detected', 'true');
+                window.parent.sessionStorage.setItem('paste_time', Date.now().toString());
+            }
+        }, true);
+        </script>
+        """, height=0)
+
         user_sql = st.text_area("", value=st.session_state.user_sql, height=165,
             placeholder="-- Write your PostgreSQL query here\nSELECT ...",
             key=f"sql_{qi}", label_visibility="collapsed")
         st.session_state.user_sql = user_sql
+
+        # Detect paste by timing — if query appears fast and is long enough
+        if user_sql.strip() and st.session_state.q_start_time:
+            elapsed_typing = (datetime.now() - st.session_state.q_start_time).total_seconds()
+            word_count = len(user_sql.split())
+            # If query has 5+ words and appeared in under 30 seconds = likely pasted
+            if elapsed_typing < 30 and word_count >= 5 and not st.session_state.get("paste_warned"):
+                st.session_state.paste_detected = True
+            else:
+                st.session_state.paste_detected = False
 
         b1,b2,b3,b4,b5 = st.columns([3,3,2,2,2])
         run_clicked = b1.button("▶ Run Query")
@@ -623,14 +649,28 @@ elif st.session_state.stage == "practice":
         if submit_clicked:
             api_key = get_api_key()
             if not api_key: st.error("Add your Gemini API key first.")
+            elif st.session_state.get("paste_detected", False):
+                st.markdown("""
+                <div style='background:#f8717115;border:1px solid #f87171;border-radius:10px;padding:16px;margin-top:10px'>
+                    <div style='color:#f87171;font-size:16px;font-weight:700;margin-bottom:8px'>⚠ PASTE DETECTED — Not Counted</div>
+                    <div style='color:#8899aa;font-size:13px;line-height:1.7'>
+                        Your query was submitted too quickly after the question appeared.<br>
+                        Writing a proper SQL query takes at least <b style='color:#e2f0ff'>3+ minutes</b>.<br><br>
+                        <span style='color:#f59e0b'>No XP awarded. Streak not updated.</span><br>
+                        Type the query yourself to get credit and learn properly.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.session_state.paste_detected = False
+                st.session_state.paste_warned = True
             else:
-                strict = st.session_state.mode == "Hero"
                 with st.spinner("Evaluating your query..."):
                     result = evaluate_answer(get_schema_text(), q["question"], q["concept"],
                                              q["sample_answer"], user_sql, api_key)
                     elapsed = int((datetime.now() - st.session_state.q_start_time).total_seconds()) if st.session_state.q_start_time else 0
                     st.session_state.feedback = {**result, "elapsed": elapsed}
                     st.session_state.stats["times"].append(elapsed)
+                    st.session_state.paste_warned = False
 
                     concept = q.get("concept","Other")
                     concepts = st.session_state.stats["concepts"]
@@ -691,23 +731,33 @@ elif st.session_state.stage == "practice":
             time_color = "#00ff9d" if elapsed < 60 else "#f59e0b" if elapsed < 120 else "#f87171"
             score_color = "#00ff9d" if score >= 75 else "#f59e0b" if score >= 50 else "#f87171"
 
-            st.markdown(f"""<div style='background:{bg};border:1px solid {bc}44;border-radius:10px;padding:14px;margin-top:10px'>
+            is_correct = fb["correct"]
+            icon = "✓" if is_correct else "✗"
+            result_label = "Correct!" if is_correct else "Wrong — streak reset to 0"
+            xp_html = f"<span style='color:#c084fc;font-size:12px;font-weight:700'>{xp_msg}</span>" if xp_msg else ""
+            speed_html = "<span style='color:#00ff9d;font-size:11px'>⚡ Speed bonus!</span>" if elapsed < 60 and is_correct else ""
+            explanation = fb.get("explanation","")
+            tip = fb.get("tip","")
+
+            st.markdown(f"""
+            <div style='background:{bg};border:1px solid {bc}44;border-radius:10px;padding:14px;margin-top:10px'>
                 <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
-                    <span style='color:{bc};font-size:17px;font-weight:700'>{"✓" if fb["correct"] else "✗"}</span>
-                    <span style='color:{bc};font-weight:700;font-size:14px'>{"Correct!" if fb["correct"] else "Wrong — streak reset to 0"}</span>
+                    <span style='color:{bc};font-size:17px;font-weight:700'>{icon}</span>
+                    <span style='color:{bc};font-weight:700;font-size:14px'>{result_label}</span>
                     <span style='color:#4a6080;font-size:10px;margin-left:auto'>Score: <b style='color:{score_color}'>{score}/100</b></span>
-                    {"<span style='color:#c084fc;font-size:12px;font-weight:700'>"+xp_msg+"</span>" if xp_msg else ""}
+                    {xp_html}
                 </div>
-                <div style='color:#c0d0e0;font-size:13px;line-height:1.7;margin-bottom:10px'>{fb.get("explanation","")}</div>
-                <div style='color:#4a6080;font-size:12px;margin-bottom:10px'><span style='color:#00ff9d'>tip: </span>{fb.get("tip","")}</div>
+                <div style='color:#c0d0e0;font-size:13px;line-height:1.7;margin-bottom:10px'>{explanation}</div>
+                <div style='color:#4a6080;font-size:12px;margin-bottom:10px'><span style='color:#00ff9d'>tip: </span>{tip}</div>
                 <div style='display:flex;gap:16px;border-top:1px solid #1a2535;padding-top:10px;flex-wrap:wrap'>
                     <span style='color:#4a6080;font-size:11px'>⏱ Time: <b style='color:{time_color}'>{elapsed}s</b></span>
                     <span style='color:#4a6080;font-size:11px'>📊 Score: <b style='color:{score_color}'>{score}/100</b></span>
                     <span style='color:#4a6080;font-size:11px'>🎯 Streak: <b style='color:#00ff9d'>{st.session_state.streak}/15</b></span>
                     <span style='color:#4a6080;font-size:11px'>⚡ Mode: <b style='color:{mode_color}'>{st.session_state.mode}</b></span>
-                    {"<span style='color:#00ff9d;font-size:11px'>⚡ Speed bonus!</span>" if elapsed < 60 and fb["correct"] else ""}
+                    {speed_html}
                 </div>
-            </div>""", unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
             if st.button("Next Question →"): next_q()
 
