@@ -33,6 +33,8 @@ header { visibility: visible !important; background: #080c14 !important; }
 }
 .stButton > button:hover { transform: translateY(-1px) !important; box-shadow: 0 4px 20px #00ff9d33 !important; }
 .stButton > button:disabled { opacity: 0.4 !important; transform: none !important; }
+/* XP cost info below buttons */
+.xp-info { color: #4a6080; font-size: 10px; text-align: center; margin-top: 4px; }
 [data-testid="metric-container"] {
     background: #0c1220 !important; border: 1px solid #1a2535 !important;
     border-radius: 10px !important; padding: 14px !important;
@@ -556,12 +558,15 @@ elif st.session_state.stage == "practice":
             key=f"sql_{qi}", label_visibility="collapsed")
         st.session_state.user_sql = user_sql
 
-        b1,b2,b3,b4,b5 = st.columns([2,2,1,1,2])
+        b1,b2,b3,b4,b5 = st.columns([3,3,2,2,2])
         run_clicked = b1.button("▶ Run Query")
         submit_clicked = b2.button("✓ Submit Answer", disabled=not st.session_state.query_ran or bool(st.session_state.feedback))
-        skip_clicked = b3.button(f"Skip (-{XP_COST['skip']}XP)")
-        hint_clicked = b4.button(f"Hint (-{XP_COST['hint']}XP)", disabled=st.session_state.hint_used)
-        show_ans = b5.checkbox(f"Answer (-{XP_COST['answer']}XP)", disabled=st.session_state.answer_used)
+        skip_clicked = b3.button("⏭ Skip")
+        hint_clicked = b4.button("💡 Hint", disabled=st.session_state.hint_used)
+        show_ans = b5.checkbox("📖 Show Answer", disabled=st.session_state.answer_used)
+        b3.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-15 XP</div>", unsafe_allow_html=True)
+        b4.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-20 XP</div>", unsafe_allow_html=True)
+        b5.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-50 XP</div>", unsafe_allow_html=True)
 
         if hint_clicked and not st.session_state.hint_used:
             if spend_xp(XP_COST["hint"]): st.session_state.hint_used = True; st.rerun()
