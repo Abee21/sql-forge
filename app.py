@@ -1177,11 +1177,14 @@ elif st.session_state.practice_mode == "Python" and st.session_state.stage == "p
             try:
                 output = run_python(user_code, st.session_state.tables)
                 if output is not None:
-                    import pandas as _pd2
-                    if isinstance(output, _pd2.DataFrame):
+                    import pandas as pd_check
+                    if isinstance(output, pd_check.DataFrame):
                         st.session_state.query_result = output
+                    elif isinstance(output, pd_check.Series):
+                        st.session_state.query_result = output.reset_index()
+                        st.session_state.query_result.columns = [str(c) for c in st.session_state.query_result.columns]
                     else:
-                        st.session_state.query_result = pd2.DataFrame([{"result": str(output)}])
+                        st.session_state.query_result = pd_check.DataFrame([{"result": str(output)}])
                     st.session_state.query_error = None
                 else:
                     st.session_state.query_error = "No output. Make sure you assign your answer to 'result'."
