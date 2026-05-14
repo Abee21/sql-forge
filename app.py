@@ -586,12 +586,13 @@ elif st.session_state.stage == "practice":
             key=f"sql_{qi}", label_visibility="collapsed")
         st.session_state.user_sql = user_sql
 
-        # Detect paste by timing — if query appears fast and is long enough
+        # Detect paste by timing — query must be long AND submitted very fast
         if user_sql.strip() and st.session_state.q_start_time:
             elapsed_typing = (datetime.now() - st.session_state.q_start_time).total_seconds()
             word_count = len(user_sql.split())
-            # If query has 5+ words and appeared in under 30 seconds = likely pasted
-            if elapsed_typing < 30 and word_count >= 5 and not st.session_state.get("paste_warned"):
+            line_count = len([l for l in user_sql.strip().split("\n") if l.strip()])
+            # Only flag as pasted if: multi-line complex query (3+ lines) submitted in under 20 seconds
+            if elapsed_typing < 20 and line_count >= 3 and word_count >= 10 and not st.session_state.get("paste_warned"):
                 st.session_state.paste_detected = True
             else:
                 st.session_state.paste_detected = False
@@ -650,19 +651,58 @@ elif st.session_state.stage == "practice":
             api_key = get_api_key()
             if not api_key: st.error("Add your Gemini API key first.")
             elif st.session_state.get("paste_detected", False):
+                # Still evaluate but penalise
+                with st.spinner("Evaluating your query..."):
+                    result = evaluate_answer(get_schema_text(), q["question"], q["concept"],
+                                             q["sample_answer"], user_sql, api_key)
+                if result["correct"]:
+                    st.markdown("""
+                    <div style='background:#f59e0b15;border:1px solid #f59e0b;border-radius:10px;padding:16px;margin-top:10px'>
+                        <div style='color:#f59e0b;font-size:16px;font-weight:700;margin-bottom:8px'>✓ Correct Query — But Copy-Paste Detected</div>
+                        <div style='color:#8899aa;font-size:13px;line-height:1.7'>
+                            Your SQL logic is correct ✓<br>
+                            However, we detected this was submitted too quickly — likely copy-pasted.<br><br>
+                            <span style='color:#f87171;font-weight:700'>❌ Marked as WRONG. No XP. Streak not updated.</span><br><br>
+                            Type the query yourself next time to earn XP and advance your streak.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style='background:#f8717115;border:1px solid #f87171;border-radius:10px;padding:16px;margin-top:10px'>
+                        <div style='color:#f87171;font-size:16px;font-weight:700;margin-bottom:8px'>✗ Wrong Query — Copy-Paste Also Detected</div>
+                        <div style='color:#8899aa;font-size:13px;line-height:1.7'>
+                            Your SQL logic is also incorrect.<br>
+                            No XP awarded. Streak not updated. Try writing it yourself.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                # Reset streak on paste regardless
+                st.session_state.streak = 0
+                st.session_state.consecutive_correct = 0
+                st.session_state.stats["total"] += 1
+                st.session_state.paste_detected = False
+                st.session_state.paste_warned = True
+
+                # Auto refresh — same level, new questions, no way out except typing or spending XP
                 st.markdown("""
-                <div style='background:#f8717115;border:1px solid #f87171;border-radius:10px;padding:16px;margin-top:10px'>
-                    <div style='color:#f87171;font-size:16px;font-weight:700;margin-bottom:8px'>⚠ PASTE DETECTED — Not Counted</div>
-                    <div style='color:#8899aa;font-size:13px;line-height:1.7'>
-                        Your query was submitted too quickly after the question appeared.<br>
-                        Writing a proper SQL query takes at least <b style='color:#e2f0ff'>3+ minutes</b>.<br><br>
-                        <span style='color:#f59e0b'>No XP awarded. Streak not updated.</span><br>
-                        Type the query yourself to get credit and learn properly.
+                <div style='background:#1a2535;border-radius:8px;padding:12px;margin-top:12px;text-align:center'>
+                    <div style='color:#f59e0b;font-size:12px;font-weight:700'>
+                        ✍️ Type the query yourself to continue — or use XP to Skip
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                st.session_state.paste_detected = False
-                st.session_state.paste_warned = True
+                if st.button("✍️ Try Again — Type it yourself"):
+                    fresh_qs = get_questions(st.session_state.tables, st.session_state.level)
+                    st.session_state.questions = fresh_qs
+                    st.session_state.qi = 0
+                    st.session_state.user_sql = ""
+                    st.session_state.query_ran = False
+                    st.session_state.query_result = None
+                    st.session_state.feedback = None
+                    st.session_state.paste_warned = False
+                    st.session_state.q_start_time = datetime.now()
+                    st.rerun()
             else:
                 with st.spinner("Evaluating your query..."):
                     result = evaluate_answer(get_schema_text(), q["question"], q["concept"],
@@ -771,7 +811,15 @@ elif st.session_state.stage == "practice":
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-            if st.button("Next Question →"): next_q()
+            # Auto move to next question after 2 seconds if correct, else stay
+            if is_correct:
+                if st.button("Next Question →"): next_q()
+            else:
+                if st.button("Try Again on New Question (costs Skip XP)"):
+                    if spend_xp(XP_COST["skip"]):
+                        next_q()
+                    else:
+                        st.warning(f"Need {XP_COST['skip']} XP to skip. Keep practicing this question!")
 
     with tab_dash:
         dashboard_view()
