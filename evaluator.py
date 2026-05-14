@@ -20,7 +20,7 @@ Respond with ONLY this JSON (no markdown):
 {{"correct": true, "score": 85, "explanation": "feedback here", "tip": "tip here"}}"""
 
     payload = json.dumps({
-        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "model": "openrouter/auto",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 200
     }).encode("utf-8")
