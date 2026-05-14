@@ -33,7 +33,9 @@ header { visibility: visible !important; background: #080c14 !important; }
     background: linear-gradient(135deg, #00ff9d, #00cc7a) !important;
     color: #080c14 !important; border: none !important; border-radius: 8px !important;
     font-family: 'Space Grotesk', sans-serif !important; font-weight: 700 !important;
-    padding: 0.5rem 1.5rem !important; transition: all 0.2s !important;
+    padding: 0.4rem 1rem !important; font-size: 13px !important;
+    height: 38px !important; line-height: 1 !important;
+    transition: all 0.2s !important; white-space: nowrap !important;
 }
 .stButton > button:hover { transform: translateY(-1px) !important; box-shadow: 0 4px 20px #00ff9d33 !important; }
 .stButton > button:disabled { opacity: 0.4 !important; transform: none !important; }
