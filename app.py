@@ -89,6 +89,18 @@ LEVELS = {
 DIFF_COLOR = {"Easy": "#00ff9d", "Medium": "#f59e0b", "Hard": "#f87171", "MAANG": "#c084fc"}
 
 # ── STATE ────────────────────────────────────────────────────
+# ── Admin Config ─────────────────────────────────────────────
+def load_admin_config():
+    import pickle, os
+    config_file = "admin_config.pkl"
+    if os.path.exists(config_file):
+        try:
+            with open(config_file, "rb") as f:
+                return pickle.load(f)
+        except:
+            pass
+    return {"fixed_dataset": False, "tables": {}, "file_name": "", "message": ""}
+
 def init():
     today = str(date.today())
     defaults = {
@@ -477,20 +489,58 @@ if st.session_state.stage == "upload":
         </div>
     </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>UPLOAD — up to 3 CSV files or 1 Excel with 3 sheets</div>", unsafe_allow_html=True)
-    uploaded_files = st.file_uploader("", type=["csv","xlsx","xls"], accept_multiple_files=True, label_visibility="collapsed")
+    # Check admin config
+    admin_cfg = load_admin_config()
 
-    if uploaded_files:
-        if len(uploaded_files) > 3: uploaded_files = uploaded_files[:3]
-        tables = {}
-        for f in uploaded_files:
-            parsed = parse_file(f)
-            tables.update(parsed)
-            if len(tables) >= 3: tables = dict(list(tables.items())[:3]); break
+    # Show admin message if set
+    if admin_cfg.get("message"):
+        st.markdown(f"""<div style='background:#c084fc11;border:1px solid #c084fc33;border-radius:8px;padding:10px;margin-bottom:12px'>
+            <span style='color:#c084fc;font-size:11px;font-weight:700'>📢 ADMIN: </span>
+            <span style='color:#e2f0ff;font-size:12px'>{admin_cfg["message"]}</span>
+        </div>""", unsafe_allow_html=True)
 
-        if tables:
-            st.session_state.tables = tables
-            st.session_state.file_name = ", ".join([f.name for f in uploaded_files])
+    if admin_cfg.get("fixed_dataset") and admin_cfg.get("tables"):
+        # Fixed dataset mode — use admin's file
+        st.markdown("""<div style='background:#f87171
+11;border:1px solid #f8717133;border-radius:8px;padding:12px;margin-bottom:12px'>
+            <span style='color:#f87171;font-size:11px;font-weight:700'>🔒 FIXED DATASET MODE</span>
+            <span style='color:#8899aa;font-size:12px'> — Dataset is set by admin. Upload is disabled.</span>
+        </div>""", unsafe_allow_html=True)
+
+        tables = admin_cfg["tables"]
+        file_name = admin_cfg.get("file_name", "Admin Dataset")
+        st.session_state.tables = tables
+        st.session_state.file_name = file_name
+
+        # Show dataset info
+        st.markdown(f"""<div style='background:#0c1220;border:1px solid #00ff9d33;border-radius:10px;padding:14px;margin:12px 0'>
+            <span style='color:#00ff9d;font-weight:700'>✓ Dataset loaded:</span>
+            <span style='color:#e2f0ff'> {", ".join(tables.keys())}</span>
+            <span style='color:#4a6080'> · {sum(len(d) for d in tables.values())} rows</span>
+        </div>""", unsafe_allow_html=True)
+
+        for tname, df in tables.items():
+            with st.expander(f"Preview: {tname}"):
+                st.dataframe(df.head(3), use_container_width=True)
+
+        if st.button("🚀 Start Practising — Level 1"): start_level(1)
+
+    else:
+        # Open upload mode
+        st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>UPLOAD — up to 3 CSV files or 1 Excel with 3 sheets</div>", unsafe_allow_html=True)
+        uploaded_files = st.file_uploader("", type=["csv","xlsx","xls"], accept_multiple_files=True, label_visibility="collapsed")
+
+        if uploaded_files:
+            if len(uploaded_files) > 3: uploaded_files = uploaded_files[:3]
+            tables = {}
+            for f in uploaded_files:
+                parsed = parse_file(f)
+                tables.update(parsed)
+                if len(tables) >= 3: tables = dict(list(tables.items())[:3]); break
+
+            if tables:
+                st.session_state.tables = tables
+                st.session_state.file_name = ", ".join([f.name for f in uploaded_files])
             st.markdown(f"""<div style='background:#0c1220;border:1px solid #00ff9d33;border-radius:8px;padding:12px;margin:10px 0'>
                 <span style='color:#00ff9d;font-weight:700'>✓ {len(tables)} table(s) loaded:</span>
                 <span style='color:#e2f0ff'> {", ".join(tables.keys())}</span>
@@ -555,6 +605,20 @@ elif st.session_state.stage == "practice":
             </div>
             <div style='color:#e2f0ff;font-size:14px;font-weight:500;line-height:1.7'>{q["question"]}</div>
         </div>""", unsafe_allow_html=True)
+
+        # Show expected output columns
+        expected_cols = q.get("expected_columns", [])
+        expected_rows = q.get("expected_rows", None)
+        if expected_cols or expected_rows:
+            cols_str = " · ".join([f"<span style='color:#f59e0b;font-family:monospace'>{c}</span>" for c in expected_cols])
+            rows_str = f"<span style='color:#4a6080;font-size:11px'>~{expected_rows} rows expected</span>" if expected_rows else ""
+            st.markdown(f"""
+            <div style='background:#f59e0b08;border:1px solid #f59e0b33;border-radius:8px;padding:10px;margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap'>
+                <span style='color:#f59e0b;font-size:10px;font-weight:700;letter-spacing:1px'>EXPECTED OUTPUT</span>
+                <span style='font-size:12px'>{cols_str}</span>
+                {rows_str}
+            </div>
+            """, unsafe_allow_html=True)
 
         # Inline schema reference
         schema_html = "<div style='background:#060a10;border:1px solid #1a2535;border-radius:8px;padding:10px;margin-bottom:10px'>"
@@ -654,7 +718,9 @@ elif st.session_state.stage == "practice":
                 # Still evaluate but penalise
                 with st.spinner("Evaluating your query..."):
                     result = evaluate_answer(get_schema_text(), q["question"], q["concept"],
-                                             q["sample_answer"], user_sql, api_key)
+                                             q["sample_answer"], user_sql, api_key,
+                                             tables=st.session_state.tables,
+                                             mode=st.session_state.mode)
                 if result["correct"]:
                     st.markdown("""
                     <div style='background:#f59e0b15;border:1px solid #f59e0b;border-radius:10px;padding:16px;margin-top:10px'>
@@ -706,7 +772,9 @@ elif st.session_state.stage == "practice":
             else:
                 with st.spinner("Evaluating your query..."):
                     result = evaluate_answer(get_schema_text(), q["question"], q["concept"],
-                                             q["sample_answer"], user_sql, api_key)
+                                             q["sample_answer"], user_sql, api_key,
+                                             tables=st.session_state.tables,
+                                             mode=st.session_state.mode)
                     elapsed = int((datetime.now() - st.session_state.q_start_time).total_seconds()) if st.session_state.q_start_time else 0
                     st.session_state.feedback = {**result, "elapsed": elapsed}
                     st.session_state.stats["times"].append(elapsed)
