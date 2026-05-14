@@ -6,6 +6,8 @@ import os
 from datetime import datetime, date, timedelta
 from question_generator import get_questions
 from evaluator import evaluate_answer
+from python_questions import get_python_questions
+from python_evaluator import evaluate_python, run_python
 
 st.set_page_config(page_title="SQL Forge", page_icon="⬡", layout="wide", initial_sidebar_state="expanded")
 
@@ -110,7 +112,7 @@ def init():
         "feedback": None, "user_sql": "", "file_name": "",
         "query_result": None, "query_error": None, "query_ran": False,
         "xp": 0, "hint_used": False, "answer_used": False,
-        "q_start_time": None, "mode": "Hero", "paste_detected": False, "keystrokes": 0,
+        "q_start_time": None, "mode": "Hero", "paste_detected": False, "keystrokes": 0, "practice_mode": "SQL",
         "streak_days": [], "last_practice_date": None,
         "penalty_applied_today": False, "demoted": False,
         "total_attempted": 0, "consecutive_correct": 0,
@@ -574,8 +576,8 @@ if st.session_state.stage == "upload":
 
             if st.button("🚀 Start Practising — Level 1"): start_level(1)
 
-# ── PRACTICE ─────────────────────────────────────────────────
-elif st.session_state.stage == "practice":
+# ── PRACTICE (SQL) ───────────────────────────────────────────
+elif st.session_state.stage == "practice" and st.session_state.practice_mode == "SQL":
     questions = st.session_state.questions
     qi = st.session_state.qi
     q = questions[qi]
@@ -898,8 +900,8 @@ elif st.session_state.stage == "practice":
     with tab_weak:
         weak_areas()
 
-# ── COMPLETE ─────────────────────────────────────────────────
-elif st.session_state.stage == "complete":
+# ── COMPLETE (SQL) ───────────────────────────────────────────
+elif st.session_state.stage == "complete" and st.session_state.practice_mode == "SQL":
     s = st.session_state.stats
     acc = round((s["correct"]/s["total"])*100) if s["total"] > 0 else 0
     st.markdown(f"""<div style='text-align:center;padding:40px 0'>
@@ -913,6 +915,326 @@ elif st.session_state.stage == "complete":
     c3.metric("Total XP", st.session_state.xp); c4.metric("Rank", xp_rank(st.session_state.xp))
     st.markdown("<div style='margin-top:20px'>"); weak_areas()
     st.markdown("")
+    if st.button("🔄 New Session"):
+        for k in list(st.session_state.keys()): del st.session_state[k]
+        init(); st.rerun()
+
+# ── PYTHON MODE ───────────────────────────────────────────────
+if st.session_state.practice_mode == "Python" and st.session_state.stage == "upload":
+    st.markdown("""
+    <div style='text-align:center;padding:28px 0 18px'>
+        <div style='font-size:44px;margin-bottom:10px'>🐍</div>
+        <div style='color:#f59e0b;font-size:36px;font-weight:800;letter-spacing:3px;margin-bottom:8px'>PYTHON.FORGE</div>
+        <div style='color:#4a6080;font-size:13px;max-width:480px;margin:0 auto;line-height:1.6'>
+            Upload your dataset. Practice Pandas and NumPy from basics to MAANG-level interview questions.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    py_levels = {
+        1: {"title": "Pandas Basics", "color": "#00ff9d", "desc": "head · describe · filter · value_counts · groupby"},
+        2: {"title": "Groupby & Merge", "color": "#f59e0b", "desc": "agg · merge · apply · pivot · rank · cumsum"},
+        3: {"title": "MAANG Level", "color": "#f87171", "desc": "rolling · z-score · outliers · Pareto · correlation"},
+    }
+    c1,c2,c3 = st.columns(3)
+    for l,col in zip([1,2,3],[c1,c2,c3]):
+        lc = py_levels[l]
+        col.markdown(f"""<div style='background:#0c1220;border:1px solid {lc["color"]}33;border-radius:10px;padding:14px'>
+            <div style='color:{lc["color"]};font-size:9px;font-weight:700;letter-spacing:1.5px'>LEVEL {l}</div>
+            <div style='color:#e2f0ff;font-size:13px;font-weight:700;margin:3px 0'>{lc["title"]}</div>
+            <div style='color:#4a6080;font-size:10px'>{lc["desc"]}</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("")
+    st.markdown("""<div style='background:#f59e0b08;border:1px solid #f59e0b33;border-radius:8px;padding:12px;margin:10px 0'>
+        <div style='color:#f59e0b;font-size:10px;font-weight:700;margin-bottom:4px'>💡 HOW TO WRITE YOUR ANSWER</div>
+        <div style='color:#8899aa;font-size:12px;line-height:1.8'>
+            Always store your final answer in a variable called <b style='color:#e2f0ff'>result</b><br>
+            Example: <code>result = df.groupby("category")["sales"].sum()</code><br>
+            Your dataframe is available as both <b style='color:#e2f0ff'>df</b> and the actual table name.
+        </div>
+    </div>""", unsafe_allow_html=True)
+
+    admin_cfg = load_admin_config()
+    if admin_cfg.get("fixed_dataset") and admin_cfg.get("tables"):
+        tables = admin_cfg["tables"]
+        st.session_state.tables = tables
+        st.session_state.file_name = admin_cfg.get("file_name","Admin Dataset")
+        st.markdown(f"""<div style='background:#0c1220;border:1px solid #00ff9d33;border-radius:8px;padding:12px;margin:10px 0'>
+            <span style='color:#00ff9d;font-weight:700'>✓ Dataset loaded:</span>
+            <span style='color:#e2f0ff'> {", ".join(tables.keys())}</span>
+        </div>""", unsafe_allow_html=True)
+        if st.button("🐍 Start Python Practice — Level 1"):
+            qs = get_python_questions(st.session_state.tables, 1)
+            st.session_state.update({
+                "questions": qs, "qi": 0, "streak": 0, "level": 1,
+                "feedback": None, "user_sql": "", "stage": "py_practice",
+                "query_ran": False, "query_result": None, "query_error": None,
+                "hint_used": False, "answer_used": False, "q_start_time": datetime.now()
+            })
+            st.rerun()
+    else:
+        st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>UPLOAD — CSV or Excel</div>", unsafe_allow_html=True)
+        py_files = st.file_uploader("", type=["csv","xlsx","xls"], accept_multiple_files=True, label_visibility="collapsed", key="py_uploader")
+        if py_files:
+            tables = {}
+            for f in py_files[:3]:
+                parsed = parse_file(f)
+                tables.update(parsed)
+                if len(tables) >= 3: break
+            if tables:
+                st.session_state.tables = tables
+                st.session_state.file_name = ", ".join([f.name for f in py_files[:3]])
+                st.markdown(f"""<div style='background:#0c1220;border:1px solid #00ff9d33;border-radius:8px;padding:12px;margin:10px 0'>
+                    <span style='color:#00ff9d;font-weight:700'>✓ {len(tables)} table(s) loaded:</span>
+                    <span style='color:#e2f0ff'> {", ".join(tables.keys())}</span>
+                </div>""", unsafe_allow_html=True)
+                for tname, df in tables.items():
+                    with st.expander(f"Preview: {tname}"):
+                        st.dataframe(df.head(3), use_container_width=True)
+                if st.button("🐍 Start Python Practice — Level 1"):
+                    qs = get_python_questions(st.session_state.tables, 1)
+                    st.session_state.update({
+                        "questions": qs, "qi": 0, "streak": 0, "level": 1,
+                        "feedback": None, "user_sql": "", "stage": "py_practice",
+                        "query_ran": False, "query_result": None, "query_error": None,
+                        "hint_used": False, "answer_used": False, "q_start_time": datetime.now()
+                    })
+                    st.rerun()
+
+elif st.session_state.practice_mode == "Python" and st.session_state.stage == "py_practice":
+    questions = st.session_state.questions
+    qi = st.session_state.qi
+    q = questions[qi]
+    py_levels = {
+        1: {"label": "Level 1", "title": "Pandas Basics", "color": "#00ff9d"},
+        2: {"label": "Level 2", "title": "Groupby & Merge", "color": "#f59e0b"},
+        3: {"label": "Level 3", "title": "MAANG Level", "color": "#f87171"},
+    }
+    cfg = py_levels[st.session_state.level]
+    dc = DIFF_COLOR.get(q.get("difficulty",""), "#8899aa")
+    xp_reward = XP_EARN["correct_hero"] if st.session_state.mode == "Hero" else XP_EARN["correct_starter"]
+
+    ca,cb,cc,cd = st.columns([4,1,1,1])
+    ca.markdown(f"<div style='color:#f59e0b;font-size:17px;font-weight:800;padding-top:4px'>🐍 PYTHON.FORGE <span style='color:#1a2535'>|</span> <span style='color:#4a6080;font-size:11px;font-weight:400'>{st.session_state.file_name}</span></div>", unsafe_allow_html=True)
+    cb.markdown(f"<div style='color:{cfg['color']};font-weight:700;text-align:center;padding-top:6px'>{cfg['label']}</div>", unsafe_allow_html=True)
+    cc.markdown(f"<div style='color:#4a6080;text-align:center;padding-top:6px'>Q{qi+1}/{len(questions)}</div>", unsafe_allow_html=True)
+    cd.markdown(f"<div style='color:{dc};font-weight:700;text-align:center;padding-top:6px'>{q.get('difficulty','')}</div>", unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1a2535;margin:6px 0 10px'>", unsafe_allow_html=True)
+
+    tab_practice, tab_dash, tab_brief = st.tabs(["🐍 Practice", "📊 Dashboard", "📋 Dataset Brief"])
+
+    with tab_practice:
+        # Question card
+        st.markdown(f"""<div style='background:#0c1220;border:1px solid #1a2535;border-left:3px solid {cfg["color"]};border-radius:10px;padding:16px;margin-bottom:12px'>
+            <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
+                <span style='background:{cfg["color"]}22;color:{cfg["color"]};border-radius:6px;padding:2px 10px;font-size:10px;font-weight:700'>{q.get("concept","").upper()}</span>
+                <span style='background:{dc}22;color:{dc};border-radius:6px;padding:2px 10px;font-size:10px;font-weight:700'>{q.get("difficulty","")}</span>
+                <span style='color:#c084fc;font-size:11px;margin-left:auto'>+{xp_reward} XP</span>
+            </div>
+            <div style='color:#e2f0ff;font-size:14px;font-weight:500;line-height:1.7'>{q["question"]}</div>
+        </div>""", unsafe_allow_html=True)
+
+        # Expected output
+        expected_cols = q.get("expected_columns", [])
+        expected_rows = q.get("expected_rows", None)
+        if expected_cols:
+            cols_str = " · ".join([f"<span style='color:#f59e0b;font-family:monospace'>{c}</span>" for c in expected_cols])
+            rows_str = f"<span style='color:#4a6080;font-size:11px'> · ~{expected_rows} rows</span>" if expected_rows else ""
+            st.markdown(f"""<div style='background:#f59e0b08;border:1px solid #f59e0b33;border-radius:8px;padding:10px;margin-bottom:10px'>
+                <span style='color:#f59e0b;font-size:10px;font-weight:700;letter-spacing:1px'>EXPECTED OUTPUT </span>{cols_str}{rows_str}
+            </div>""", unsafe_allow_html=True)
+
+        # Schema reference
+        schema_html = "<div style='background:#060a10;border:1px solid #1a2535;border-radius:8px;padding:10px;margin-bottom:10px'>"
+        schema_html += "<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:8px'>📋 AVAILABLE DATAFRAMES</div>"
+        schema_html += "<div style='display:flex;flex-wrap:wrap;gap:20px'>"
+        for tname, df in st.session_state.tables.items():
+            cols_str = "  ".join([f"<span style='color:#f59e0b'>{c}</span>" for c in df.columns])
+            schema_html += f"<div><div style='color:#00ff9d;font-size:12px;font-weight:700;margin-bottom:4px'>🐍 {tname} / df ({len(df)} rows)</div><div style='font-size:11px;line-height:1.8'>{cols_str}</div></div>"
+        schema_html += "</div></div>"
+        st.markdown(schema_html, unsafe_allow_html=True)
+
+        # Code editor
+        st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>PYTHON EDITOR — store your answer in <code>result</code></div>", unsafe_allow_html=True)
+        user_code = st.text_area("", value=st.session_state.user_sql, height=165,
+            placeholder="# Write your pandas/numpy code here\nimport pandas as pd\nimport numpy as np\n\nresult = df.head()",
+            key=f"py_{qi}", label_visibility="collapsed")
+        st.session_state.user_sql = user_code
+
+        b1,b2,b3,b4,b5 = st.columns([2,2,1,1,2])
+        run_clicked = b1.button("▶ Run Code")
+        submit_clicked = b2.button("✓ Submit Answer", disabled=not st.session_state.query_ran or bool(st.session_state.feedback))
+        skip_clicked = b3.button("⏭ Skip")
+        hint_clicked = b4.button("💡 Hint", disabled=st.session_state.hint_used)
+        show_ans = b5.checkbox("📖 Show Answer", disabled=st.session_state.answer_used)
+        b3.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-15 XP</div>", unsafe_allow_html=True)
+        b4.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-20 XP</div>", unsafe_allow_html=True)
+        b5.markdown("<div style='color:#4a6080;font-size:10px;text-align:center;margin-top:-8px'>-50 XP</div>", unsafe_allow_html=True)
+
+        if hint_clicked and not st.session_state.hint_used:
+            if spend_xp(XP_COST["hint"]): st.session_state.hint_used = True; st.rerun()
+            else: st.warning(f"Need {XP_COST['hint']} XP for hint!")
+        if show_ans and not st.session_state.answer_used:
+            if spend_xp(XP_COST["answer"]): st.session_state.answer_used = True
+            else: st.warning(f"Need {XP_COST['answer']} XP to reveal answer!")
+        if skip_clicked: spend_xp(XP_COST["skip"]); next_q()
+
+        if run_clicked and user_code.strip():
+            try:
+                output = run_python(user_code, st.session_state.tables)
+                if output is not None:
+                    import pandas as _pd2
+                    if isinstance(output, _pd2.DataFrame):
+                        st.session_state.query_result = output
+                    else:
+                        st.session_state.query_result = pd2.DataFrame([{"result": str(output)}])
+                    st.session_state.query_error = None
+                else:
+                    st.session_state.query_error = "No output. Make sure you assign your answer to 'result'."
+                    st.session_state.query_result = None
+            except Exception as e:
+                st.session_state.query_error = str(e)
+                st.session_state.query_result = None
+            st.session_state.query_ran = True
+
+        if st.session_state.hint_used:
+            st.markdown(f"""<div style='background:#00ff9d08;border:1px solid #00ff9d33;border-radius:8px;padding:10px;margin-top:8px'>
+                <span style='color:#00ff9d;font-size:10px;font-weight:700'>HINT  </span>
+                <span style='color:#8899aa;font-size:12px'>{q["hint"]}</span>
+            </div>""", unsafe_allow_html=True)
+
+        if st.session_state.answer_used:
+            st.markdown("<div style='color:#f59e0b;font-size:10px;font-weight:700;margin:8px 0 4px'>REFERENCE ANSWER</div>", unsafe_allow_html=True)
+            st.code(q["sample_answer"], language="python")
+
+        if st.session_state.query_ran:
+            st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin:10px 0 6px'>CODE OUTPUT</div>", unsafe_allow_html=True)
+            if st.session_state.query_error:
+                st.markdown(f"""<div style='background:#f8717110;border:1px solid #f8717144;border-radius:8px;padding:10px'>
+                    <div style='color:#f87171;font-size:10px;font-weight:700;margin-bottom:3px'>⚠ ERROR</div>
+                    <code style='color:#f87171;font-size:12px'>{st.session_state.query_error}</code>
+                </div>""", unsafe_allow_html=True)
+            elif st.session_state.query_result is not None:
+                r = st.session_state.query_result
+                st.markdown(f"<div style='color:#4a6080;font-size:11px;margin-bottom:4px'>{len(r)} rows · {len(r.columns)} columns</div>", unsafe_allow_html=True)
+                st.dataframe(r.head(20), use_container_width=True)
+                if not st.session_state.feedback:
+                    st.markdown("<div style='color:#00ff9d;font-size:11px;margin-top:4px'>✓ Code ran — click Submit Answer to evaluate</div>", unsafe_allow_html=True)
+
+        if submit_clicked:
+            with st.spinner("Evaluating your code..."):
+                result = evaluate_python(q["question"], q["concept"], q["sample_answer"],
+                                         user_code, st.session_state.tables, st.session_state.mode)
+                elapsed = int((datetime.now() - st.session_state.q_start_time).total_seconds()) if st.session_state.q_start_time else 0
+                st.session_state.feedback = {**result, "elapsed": elapsed}
+                st.session_state.stats["times"].append(elapsed)
+
+                concept = q.get("concept","Other")
+                concepts = st.session_state.stats["concepts"]
+                if concept not in concepts: concepts[concept] = {"attempts":0,"correct":0,"acc":0}
+                concepts[concept]["attempts"] += 1
+                st.session_state.stats["total"] += 1
+
+                if result["correct"]:
+                    concepts[concept]["correct"] += 1
+                    st.session_state.stats["correct"] += 1
+                    new_streak = st.session_state.streak + 1
+                    xp_gain = xp_reward
+                    if elapsed < 60: xp_gain += XP_EARN["speed_bonus"]
+                    if new_streak == 5: xp_gain += XP_EARN["streak_5"]
+                    if new_streak == 10: xp_gain += XP_EARN["streak_10"]
+                    st.session_state.xp += xp_gain
+                    st.session_state.streak = new_streak
+                    st.session_state.consecutive_correct += 1
+                    st.session_state.max_consecutive = max(st.session_state.max_consecutive, st.session_state.consecutive_correct)
+                    if new_streak >= 15:
+                        st.session_state.xp += XP_EARN["level_complete"]
+                        if st.session_state.level < 3:
+                            st.balloons()
+                            next_lvl = st.session_state.level + 1
+                            qs = get_python_questions(st.session_state.tables, next_lvl)
+                            st.session_state.update({
+                                "questions": qs, "qi": 0, "streak": 0, "level": next_lvl,
+                                "feedback": None, "user_sql": "", "query_ran": False,
+                                "query_result": None, "query_error": None,
+                                "hint_used": False, "answer_used": False, "q_start_time": datetime.now()
+                            })
+                            st.rerun()
+                        else:
+                            st.session_state.stage = "py_complete"; st.rerun()
+                else:
+                    st.session_state.streak = 0
+                    st.session_state.consecutive_correct = 0
+
+                concepts[concept]["acc"] = round(100 * concepts[concept]["correct"] / concepts[concept]["attempts"])
+
+        if st.session_state.feedback:
+            fb = st.session_state.feedback
+            is_correct = fb["correct"]
+            bc = "#00ff9d" if is_correct else "#f87171"
+            bg = "#00ff9d08" if is_correct else "#f8717108"
+            icon = "✓" if is_correct else "✗"
+            result_label = "Correct!" if is_correct else "Wrong — streak reset to 0"
+            elapsed = fb.get("elapsed", 0)
+            score = fb.get("score", 0)
+            score_color = "#00ff9d" if score >= 75 else "#f59e0b" if score >= 50 else "#f87171"
+            time_color = "#00ff9d" if elapsed < 60 else "#f59e0b" if elapsed < 120 else "#f87171"
+
+            xp_msg = ""
+            if is_correct:
+                xp_gain = xp_reward
+                if elapsed < 60: xp_gain += XP_EARN["speed_bonus"]
+                xp_msg = f"+{xp_gain} XP"
+
+            header_col1, header_col2 = st.columns([3,1])
+            with header_col1:
+                st.markdown(f"<div style='color:{bc};font-size:18px;font-weight:800;margin-top:10px'>{icon} {result_label}</div>", unsafe_allow_html=True)
+                if xp_msg:
+                    st.markdown(f"<div style='color:#c084fc;font-size:13px;font-weight:700'>{xp_msg}</div>", unsafe_allow_html=True)
+            with header_col2:
+                st.markdown(f"<div style='text-align:right;color:{score_color};font-size:22px;font-weight:800;margin-top:10px'>{score}<span style='color:#4a6080;font-size:12px'>/100</span></div>", unsafe_allow_html=True)
+
+            st.markdown(f"<div style='color:#c0d0e0;font-size:13px;line-height:1.7;margin:10px 0 6px;background:#0c1220;padding:12px;border-radius:8px'>{fb.get('explanation','')}</div>", unsafe_allow_html=True)
+            if fb.get("tip"):
+                st.markdown(f"<div style='color:#4a6080;font-size:12px;margin-bottom:10px'>💡 <span style='color:#00ff9d'>tip:</span> {fb['tip']}</div>", unsafe_allow_html=True)
+
+            m1,m2,m3,m4 = st.columns(4)
+            m1.metric("Time", f"{elapsed}s")
+            m2.metric("Score", f"{score}/100")
+            m3.metric("Streak", f"{st.session_state.streak}/15")
+            m4.metric("Mode", st.session_state.mode)
+
+            if is_correct:
+                if st.button("Next Question →"): next_q()
+            else:
+                if st.button("Try Again on New Question"):
+                    fresh_qs = get_python_questions(st.session_state.tables, st.session_state.level)
+                    st.session_state.update({
+                        "questions": fresh_qs, "qi": 0, "feedback": None,
+                        "user_sql": "", "query_ran": False, "query_result": None,
+                        "query_error": None, "hint_used": False, "answer_used": False,
+                        "q_start_time": datetime.now()
+                    })
+                    st.rerun()
+
+    with tab_dash:
+        dashboard_view()
+    with tab_brief:
+        dataset_brief(st.session_state.tables)
+
+elif st.session_state.practice_mode == "Python" and st.session_state.stage == "py_complete":
+    s = st.session_state.stats
+    acc = round((s["correct"]/s["total"])*100) if s["total"] > 0 else 0
+    st.markdown(f"""<div style='text-align:center;padding:40px 0'>
+        <div style='font-size:52px;margin-bottom:14px'>🏆</div>
+        <div style='color:#f59e0b;font-size:30px;font-weight:800;margin-bottom:6px'>Python Master!</div>
+        <div style='color:#c084fc;font-size:17px;font-weight:700;margin-bottom:4px'>{xp_rank(st.session_state.xp)} · {st.session_state.xp} XP</div>
+        <div style='color:#4a6080;font-size:13px'>Pandas Basics → Groupby → MAANG Level mastered.</div>
+    </div>""", unsafe_allow_html=True)
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Questions", s["total"]); c2.metric("Accuracy", f"{acc}%")
+    c3.metric("Total XP", st.session_state.xp); c4.metric("Rank", xp_rank(st.session_state.xp))
     if st.button("🔄 New Session"):
         for k in list(st.session_state.keys()): del st.session_state[k]
         init(); st.rerun()
