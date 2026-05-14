@@ -9,7 +9,7 @@ def evaluate_answer(schema_info: str, question: str, concept: str,
     Returns: {"correct": bool, "score": int, "explanation": str, "tip": str}
     """
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
     prompt = f"""You are a strict PostgreSQL SQL evaluator.
 
