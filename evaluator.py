@@ -20,22 +20,22 @@ Respond with ONLY this JSON (no markdown):
 {{"correct": true, "score": 85, "explanation": "feedback here", "tip": "tip here"}}"""
 
     payload = json.dumps({
-        "model": "llama3-8b-8192",
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 200,
-        "temperature": 0.1
+        "max_tokens": 200
     }).encode("utf-8")
 
     try:
         req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions",
             data=payload,
             method="POST"
         )
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {api_key}")
+        req.add_header("HTTP-Referer", "https://sql-forge.streamlit.app")
 
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             raw = data["choices"][0]["message"]["content"]
             raw = raw.strip().replace("```json","").replace("```","").strip()
@@ -44,7 +44,7 @@ Respond with ONLY this JSON (no markdown):
         body = e.read().decode("utf-8")
         return {"correct": False, "score": 0,
                 "explanation": f"API Error {e.code}: {body[:200]}",
-                "tip": "Check your API key in settings."}
+                "tip": "Check your API key in Streamlit secrets."}
     except Exception as e:
         return {"correct": False, "score": 0,
                 "explanation": f"Evaluation error: {str(e)}",
