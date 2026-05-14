@@ -1115,7 +1115,7 @@ elif st.session_state.practice_mode == "Python" and st.session_state.stage == "p
     cd.markdown(f"<div style='color:{dc};font-weight:700;text-align:center;padding-top:6px'>{q.get('difficulty','')}</div>", unsafe_allow_html=True)
     st.markdown("<hr style='border-color:#1a2535;margin:6px 0 10px'>", unsafe_allow_html=True)
 
-    tab_practice, tab_dash, tab_brief = st.tabs(["🐍 Practice", "📊 Dashboard", "📋 Dataset Brief"])
+    tab_practice, tab_dash, tab_brief, tab_weak = st.tabs(["🐍 Practice", "📊 Dashboard", "📋 Dataset Brief", "🎯 Weak Areas"])
 
     with tab_practice:
         # Question card
@@ -1315,6 +1315,8 @@ elif st.session_state.practice_mode == "Python" and st.session_state.stage == "p
         dashboard_view()
     with tab_brief:
         dataset_brief(st.session_state.tables)
+    with tab_weak:
+        weak_areas()
 
 elif st.session_state.practice_mode == "Python" and st.session_state.stage == "py_complete":
     s = st.session_state.stats
