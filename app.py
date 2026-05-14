@@ -8,6 +8,7 @@ from question_generator import get_questions
 from evaluator import evaluate_answer
 from python_questions import get_python_questions
 from python_evaluator import evaluate_python, run_python
+from xp_store import load_user, save_user, apply_daily_penalty, get_all_users
 
 st.set_page_config(page_title="SQL Forge", page_icon="⬡", layout="wide", initial_sidebar_state="expanded")
 
@@ -91,6 +92,64 @@ LEVELS = {
 DIFF_COLOR = {"Easy": "#00ff9d", "Medium": "#f59e0b", "Hard": "#f87171", "MAANG": "#c084fc"}
 
 # ── STATE ────────────────────────────────────────────────────
+# ── Username Login ───────────────────────────────────────────
+def show_username_login():
+    st.markdown("""
+    <div style='max-width:400px;margin:80px auto 0;text-align:center'>
+        <div style='color:#00ff9d;font-size:44px;margin-bottom:12px'>⬡</div>
+        <div style='color:#00ff9d;font-size:28px;font-weight:800;letter-spacing:2px;margin-bottom:8px'>SQL.FORGE</div>
+        <div style='color:#4a6080;font-size:13px;margin-bottom:30px'>Enter your username to load your XP and progress</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        username = st.text_input("", placeholder="Enter your username...", label_visibility="collapsed")
+        if st.button("▶ Continue", use_container_width=True):
+            if username.strip():
+                # Load user data
+                user_data = load_user(username.strip())
+                user_data = apply_daily_penalty(user_data)
+
+                # Show penalty if applicable
+                if user_data.get("penalty_applied", 0) > 0:
+                    st.warning(f"⚠ You missed {user_data['missed_days']} day(s). -{user_data['penalty_applied']} XP penalty applied.")
+
+                # Load into session state
+                st.session_state.username = username.strip().lower()
+                st.session_state.xp = user_data.get("xp", 0)
+                st.session_state.level = user_data.get("level", 1)
+                st.session_state.streak_days = user_data.get("streak_days", [])
+                st.session_state.stats["total"] = user_data.get("total_solved", 0)
+                st.session_state.stats["correct"] = user_data.get("total_correct", 0)
+                st.session_state.max_consecutive = user_data.get("max_streak", 0)
+                st.session_state.user_loaded = True
+
+                # Add today's login XP if first time today
+                today = str(date.today())
+                if today not in st.session_state.streak_days:
+                    st.session_state.streak_days.append(today)
+                    st.session_state.xp += XP_EARN["daily_login"]
+
+                # Save back
+                save_user_session()
+                st.rerun()
+            else:
+                st.error("Please enter a username.")
+
+def save_user_session():
+    """Save current session XP back to persistent store"""
+    if st.session_state.get("username"):
+        save_user(st.session_state.username, {
+            "xp": st.session_state.xp,
+            "level": st.session_state.level,
+            "streak_days": st.session_state.streak_days,
+            "last_practice": str(date.today()),
+            "total_solved": st.session_state.stats.get("total", 0),
+            "total_correct": st.session_state.stats.get("correct", 0),
+            "max_streak": st.session_state.get("max_consecutive", 0),
+        })
+
 # ── Admin Config ─────────────────────────────────────────────
 def load_admin_config():
     import pickle, os
@@ -112,7 +171,7 @@ def init():
         "feedback": None, "user_sql": "", "file_name": "",
         "query_result": None, "query_error": None, "query_ran": False,
         "xp": 0, "hint_used": False, "answer_used": False,
-        "q_start_time": None, "mode": "Hero", "paste_detected": False, "keystrokes": 0, "practice_mode": "SQL",
+        "q_start_time": None, "mode": "Hero", "paste_detected": False, "keystrokes": 0, "practice_mode": "SQL", "username": "", "user_loaded": False,
         "streak_days": [], "last_practice_date": None,
         "penalty_applied_today": False, "demoted": False,
         "total_attempted": 0, "consecutive_correct": 0,
@@ -360,6 +419,20 @@ def dashboard_view():
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:20px'>", unsafe_allow_html=True)
+
+    # Leaderboard
+    st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin:16px 0 10px'>🏆 LEADERBOARD</div>", unsafe_allow_html=True)
+    users = get_all_users()
+    if users:
+        for i, u in enumerate(users[:10]):
+            medal = ["🥇","🥈","🥉"][i] if i < 3 else f"{i+1}."
+            is_me = u["username"] == st.session_state.get("username","")
+            color = "#c084fc" if is_me else "#e2f0ff"
+            st.markdown(f"""<div style='background:#0c1220;border:1px solid {"#c084fc44" if is_me else "#1a2535"};border-radius:6px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center'>
+                <span style='color:{color};font-size:13px'>{medal} {u["username"]}{"  (you)" if is_me else ""}</span>
+                <span style='color:#c084fc;font-weight:700'>{u["xp"]} XP</span>
+            </div>""", unsafe_allow_html=True)
+
     weak_areas()
 
 # ── SIDEBAR ──────────────────────────────────────────────────
@@ -368,6 +441,11 @@ with st.sidebar:
         <div style='color:#00ff9d;font-size:19px;font-weight:800;letter-spacing:2px'>⬡ SQL.FORGE</div>
         <div style='color:#4a6080;font-size:10px;letter-spacing:1px'>POSTGRESQL PRACTICE ENGINE</div>
     </div>""", unsafe_allow_html=True)
+    if st.session_state.get("username"):
+        st.markdown(f"<div style='color:#c084fc;font-size:11px;margin-bottom:4px'>👤 {st.session_state.username}</div>", unsafe_allow_html=True)
+    if st.button("🚪 Logout", key="logout_btn"):
+        for k in list(st.session_state.keys()): del st.session_state[k]
+        init(); st.rerun()
 
     # Language toggle — SQL vs Python
     st.markdown("<hr style='border-color:#1a2535;margin:8px 0'>", unsafe_allow_html=True)
@@ -467,7 +545,7 @@ with st.sidebar:
     streak_calendar()
 
 # ── UPLOAD ───────────────────────────────────────────────────
-if st.session_state.stage == "upload":
+if st.session_state.stage == "upload" and st.session_state.get("practice_mode", "SQL") == "SQL":
     st.markdown("""<div style='text-align:center;padding:28px 0 18px'>
         <div style='font-size:44px;margin-bottom:10px'>⬡</div>
         <div style='color:#00ff9d;font-size:36px;font-weight:800;letter-spacing:3px;margin-bottom:8px'>SQL.FORGE</div>
