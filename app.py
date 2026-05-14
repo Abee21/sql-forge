@@ -369,6 +369,19 @@ with st.sidebar:
         <div style='color:#4a6080;font-size:10px;letter-spacing:1px'>POSTGRESQL PRACTICE ENGINE</div>
     </div>""", unsafe_allow_html=True)
 
+    # Language toggle — SQL vs Python
+    st.markdown("<hr style='border-color:#1a2535;margin:8px 0'>", unsafe_allow_html=True)
+    st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:8px'>PRACTICE LANGUAGE</div>", unsafe_allow_html=True)
+    current_lang = st.session_state.get("practice_mode", "SQL")
+    lang = st.radio("", ["⬡ SQL", "🐍 Python"],
+                    index=0 if current_lang == "SQL" else 1,
+                    horizontal=True, label_visibility="collapsed")
+    new_lang = "Python" if "Python" in lang else "SQL"
+    if new_lang != current_lang:
+        st.session_state.practice_mode = new_lang
+        st.session_state.stage = "upload"
+        st.rerun()
+
     # Mode toggle
     st.markdown("<hr style='border-color:#1a2535;margin:8px 0'>", unsafe_allow_html=True)
     st.markdown("<div style='color:#4a6080;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px'>PRACTICE MODE</div>", unsafe_allow_html=True)
