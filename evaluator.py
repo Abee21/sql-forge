@@ -1,19 +1,10 @@
-import google.generativeai as genai
 import json
+import urllib.request
 
 
 def evaluate_answer(schema_info: str, question: str, concept: str,
                     sample_answer: str, user_sql: str, api_key: str) -> dict:
-    genai.configure(api_key=api_key)
-    
-    # Try models in order until one works
-    models_to_try = [
-        "gemini-2.0-flash-lite",
-        "gemini-2.0-flash",
-        "gemini-pro",
-        "gemini-1.0-pro"
-    ]
-    
+
     prompt = f"""You are a PostgreSQL SQL evaluator. Be LENIENT — focus on logic not formatting.
 
 Schema:
@@ -32,21 +23,34 @@ EVALUATION RULES:
 - Case differences, aliases, formatting = OK
 - Missing semicolon = OK
 - Wrong table, missing JOIN, wrong aggregation = INCORRECT
+- Be generous — if logic is right, mark correct
 
-Return ONLY raw JSON:
+Return ONLY raw JSON, no markdown:
 {{"correct": true, "score": 90, "explanation": "Short feedback.", "tip": "One tip."}}"""
 
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            raw = response.text.strip().replace("```json","").replace("```","").strip()
+    payload = json.dumps({
+        "model": "llama3-8b-8192",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 300,
+        "temperature": 0.1
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            raw = data["choices"][0]["message"]["content"]
+            raw = raw.strip().replace("```json","").replace("```","").strip()
             return json.loads(raw)
-        except Exception as e:
-            last_error = str(e)
-            continue
-    
-    return {"correct": False, "score": 0,
-            "explanation": f"Evaluation error: {last_error}",
-            "tip": "Check your syntax and try again."}
+    except Exception as e:
+        return {"correct": False, "score": 0,
+                "explanation": f"Evaluation error: {str(e)}",
+                "tip": "Check your syntax and try again."}
