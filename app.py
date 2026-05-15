@@ -823,36 +823,22 @@ elif st.session_state.stage == "practice" and st.session_state.practice_mode == 
             reasons = []
 
             # Signal 1 — Keystroke ratio
-            # Safe threshold: 90%+ keystrokes vs characters = genuinely typed
-            # Below 90% = some level of paste suspected
-            if char_count > 15:
-                if keystroke_ratio < 0.10:
-                    suspicion_score += 55  # Almost fully pasted
-                    reasons.append(f"Only {key_count} keystrokes for {char_count} chars ({int(keystroke_ratio*100)}% typed — almost no typing)")
-                elif keystroke_ratio < 0.30:
-                    suspicion_score += 40  # Mostly pasted
-                    reasons.append(f"Mostly pasted — only {int(keystroke_ratio*100)}% of query typed manually")
-                elif keystroke_ratio < 0.50:
-                    suspicion_score += 30  # Half pasted
-                    reasons.append(f"Half pasted — {int(keystroke_ratio*100)}% typed manually")
-                elif keystroke_ratio < 0.70:
-                    suspicion_score += 20  # Partially pasted
-                    reasons.append(f"Partially pasted — {int(keystroke_ratio*100)}% typed manually")
-                elif keystroke_ratio < 0.90:
-                    suspicion_score += 10  # Mild suspicion — mostly typed but some paste
-                    reasons.append(f"Mostly typed ({int(keystroke_ratio*100)}%) but some paste suspected")
-                # 90%+ typed = safe, no points added
+            # Only flag if almost no typing at all (clear paste)
+            # Keystroke tracking via JS is not 100% reliable in Streamlit
+            # so we use a very conservative threshold
+            if char_count > 30 and key_count == 0:
+                # Zero keystrokes for a substantial query = definitely pasted
+                suspicion_score += 60
+                reasons.append(f"No keystrokes detected for {char_count} character query")
+            elif char_count > 30 and keystroke_ratio < 0.05:
+                # Less than 5% keystrokes = almost certainly pasted
+                suspicion_score += 50
+                reasons.append(f"Only {key_count} keystrokes for {char_count} characters")
 
-            # Signal 2 — Similarity to reference answer
-            if sim_score > 0.90:
-                suspicion_score += 40  # Very close to exact answer
-                reasons.append(f"Query is {int(sim_score*100)}% identical to reference answer")
-            elif sim_score > 0.80:
-                suspicion_score += 25
-                reasons.append(f"Query is {int(sim_score*100)}% similar to reference answer")
-            elif sim_score > 0.70:
-                suspicion_score += 10
-                reasons.append(f"Query structure matches reference ({int(sim_score*100)}% similar)")
+            # Signal 2 — Similarity check REMOVED
+            # Reason: a correct answer will always be similar to reference
+            # We cannot penalize students for writing the right query
+            # Similarity alone is NOT evidence of cheating
 
             # Signal 3 — Speed for complex queries
             if elapsed_typing < 15 and word_count >= 8:
