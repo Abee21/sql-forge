@@ -455,12 +455,19 @@ with st.sidebar:
     current_lang = st.session_state.get("practice_mode", "SQL")
     lang = st.radio("", ["⬡ SQL", "🐍 Python"],
                     index=0 if current_lang == "SQL" else 1,
-                    horizontal=True, label_visibility="collapsed")
+                    horizontal=True, label_visibility="collapsed",
+                    key="lang_radio")
     new_lang = "Python" if "Python" in lang else "SQL"
-    if new_lang != current_lang:
+    # Only redirect if user actually clicked a different language
+    if new_lang != current_lang and not st.session_state.get("_lang_switching", False):
+        st.session_state._lang_switching = True
         st.session_state.practice_mode = new_lang
         st.session_state.stage = "upload"
+        st.session_state.feedback = None
+        st.session_state.user_sql = ""
         st.rerun()
+    elif new_lang == current_lang:
+        st.session_state._lang_switching = False
 
     # Mode toggle
     st.markdown("<hr style='border-color:#1a2535;margin:8px 0'>", unsafe_allow_html=True)
@@ -745,16 +752,131 @@ elif st.session_state.stage == "practice" and st.session_state.practice_mode == 
             key=f"sql_{qi}", label_visibility="collapsed")
         st.session_state.user_sql = user_sql
 
-        # Detect paste by timing — query must be long AND submitted very fast
+        # Keystroke tracker — counts actual keys typed vs total characters
+        import streamlit.components.v1 as components
+        components.html("""
+        <script>
+        (function() {
+            // Reset counter when new question loads
+            if (!window.sqlForgeKeyCount) window.sqlForgeKeyCount = 0;
+            if (!window.sqlForgeLastLen) window.sqlForgeLastLen = 0;
+
+            // Find the textarea
+            function getTextarea() {
+                return window.parent.document.querySelector('textarea');
+            }
+
+            function attachTracker() {
+                var ta = getTextarea();
+                if (!ta) { setTimeout(attachTracker, 500); return; }
+
+                ta.addEventListener('keydown', function(e) {
+                    // Count only printable keys and backspace
+                    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' || e.key === 'Tab') {
+                        window.sqlForgeKeyCount++;
+                    }
+                });
+
+                // Detect paste event directly
+                ta.addEventListener('paste', function(e) {
+                    window.parent.sessionStorage.setItem('paste_event', 'true');
+                    window.parent.sessionStorage.setItem('paste_time', Date.now().toString());
+                });
+
+                // Store keystroke count every second
+                setInterval(function() {
+                    var currentLen = ta.value.length;
+                    window.parent.sessionStorage.setItem('key_count', window.sqlForgeKeyCount.toString());
+                    window.parent.sessionStorage.setItem('char_count', currentLen.toString());
+                }, 1000);
+            }
+
+            attachTracker();
+        })();
+        </script>
+        """, height=0)
+
+        # Paste detection — timing + similarity to reference answer
         if user_sql.strip() and st.session_state.q_start_time:
             elapsed_typing = (datetime.now() - st.session_state.q_start_time).total_seconds()
             word_count = len(user_sql.split())
             line_count = len([l for l in user_sql.strip().split("\n") if l.strip()])
-            # Only flag as pasted if: multi-line complex query (3+ lines) submitted in under 20 seconds
-            if elapsed_typing < 20 and line_count >= 3 and word_count >= 10 and not st.session_state.get("paste_warned"):
+
+            # Check similarity to reference answer
+            def similarity(a, b):
+                a = a.lower().replace("\n","").replace(" ","")
+                b = b.lower().replace("\n","").replace(" ","")
+                if not a or not b: return 0
+                matches = sum(c in b for c in a)
+                return matches / max(len(a), len(b))
+
+            ref = q.get("sample_answer","")
+            sim_score = similarity(user_sql, ref)
+
+            # ── MULTI-SIGNAL PASTE DETECTION ──────────────────────────
+            key_count = st.session_state.get("tracked_keystrokes", 0)
+            char_count = len(user_sql.replace(" ","").replace("\n",""))
+            keystroke_ratio = key_count / max(char_count, 1)
+
+            # Each signal gives a suspicion score
+            suspicion_score = 0
+            reasons = []
+
+            # Signal 1 — Keystroke ratio
+            # Safe threshold: 90%+ keystrokes vs characters = genuinely typed
+            # Below 90% = some level of paste suspected
+            if char_count > 15:
+                if keystroke_ratio < 0.10:
+                    suspicion_score += 55  # Almost fully pasted
+                    reasons.append(f"Only {key_count} keystrokes for {char_count} chars ({int(keystroke_ratio*100)}% typed — almost no typing)")
+                elif keystroke_ratio < 0.30:
+                    suspicion_score += 40  # Mostly pasted
+                    reasons.append(f"Mostly pasted — only {int(keystroke_ratio*100)}% of query typed manually")
+                elif keystroke_ratio < 0.50:
+                    suspicion_score += 30  # Half pasted
+                    reasons.append(f"Half pasted — {int(keystroke_ratio*100)}% typed manually")
+                elif keystroke_ratio < 0.70:
+                    suspicion_score += 20  # Partially pasted
+                    reasons.append(f"Partially pasted — {int(keystroke_ratio*100)}% typed manually")
+                elif keystroke_ratio < 0.90:
+                    suspicion_score += 10  # Mild suspicion — mostly typed but some paste
+                    reasons.append(f"Mostly typed ({int(keystroke_ratio*100)}%) but some paste suspected")
+                # 90%+ typed = safe, no points added
+
+            # Signal 2 — Similarity to reference answer
+            if sim_score > 0.90:
+                suspicion_score += 40  # Very close to exact answer
+                reasons.append(f"Query is {int(sim_score*100)}% identical to reference answer")
+            elif sim_score > 0.80:
+                suspicion_score += 25
+                reasons.append(f"Query is {int(sim_score*100)}% similar to reference answer")
+            elif sim_score > 0.70:
+                suspicion_score += 10
+                reasons.append(f"Query structure matches reference ({int(sim_score*100)}% similar)")
+
+            # Signal 3 — Speed for complex queries
+            if elapsed_typing < 15 and word_count >= 8:
+                suspicion_score += 30
+                reasons.append(f"Complex query ({word_count} words) submitted in only {int(elapsed_typing)}s")
+            elif elapsed_typing < 30 and line_count >= 3:
+                suspicion_score += 20
+                reasons.append(f"Multi-line query submitted in {int(elapsed_typing)}s")
+
+            # Signal 4 — Paste event directly detected by JS
+            if st.session_state.get("js_paste_detected", False):
+                suspicion_score += 35
+                reasons.append("Paste action directly detected in editor")
+
+            # DECISION: flag if suspicion score >= 50
+            # This means at least 2 moderate signals OR 1 very strong signal
+            if suspicion_score >= 50 and not st.session_state.get("paste_warned"):
                 st.session_state.paste_detected = True
+                st.session_state.paste_reason = " · ".join(reasons) if reasons else "Multiple suspicious signals detected"
+                st.session_state.paste_score = suspicion_score
             else:
                 st.session_state.paste_detected = False
+                st.session_state.paste_reason = ""
+                st.session_state.paste_score = 0
 
         b1,b2,b3,b4,b5 = st.columns([3,3,2,2,2])
         run_clicked = b1.button("▶ Run Query")
@@ -818,24 +940,20 @@ elif st.session_state.stage == "practice" and st.session_state.practice_mode == 
                                              mode=st.session_state.mode)
                 if result["correct"]:
                     st.markdown("""
-                    <div style='background:#f59e0b15;border:1px solid #f59e0b;border-radius:10px;padding:16px;margin-top:10px'>
-                        <div style='color:#f59e0b;font-size:16px;font-weight:700;margin-bottom:8px'>✓ Correct Query — But Copy-Paste Detected</div>
-                        <div style='color:#8899aa;font-size:13px;line-height:1.7'>
-                            Your SQL logic is correct ✓<br>
-                            However, we detected this was submitted too quickly — likely copy-pasted.<br><br>
-                            <span style='color:#f87171;font-weight:700'>❌ Marked as WRONG. No XP. Streak not updated.</span><br><br>
-                            Type the query yourself next time to earn XP and advance your streak.
+                    <div style='background:#f59e0b15;border:2px solid #f59e0b;border-radius:10px;padding:16px;margin-top:10px'>
+                        <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
+                            <span style='background:#f59e0b;color:#080c14;font-size:11px;font-weight:800;padding:4px 12px;border-radius:4px;letter-spacing:1px'>⚠ AI / COPY-PASTE DETECTED</span>
                         </div>
+                        <div style='color:#f87171;font-size:14px;font-weight:700'>❌ Streak reset to 0. No XP awarded. Write it yourself.</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown("""
-                    <div style='background:#f8717115;border:1px solid #f87171;border-radius:10px;padding:16px;margin-top:10px'>
-                        <div style='color:#f87171;font-size:16px;font-weight:700;margin-bottom:8px'>✗ Wrong Query — Copy-Paste Also Detected</div>
-                        <div style='color:#8899aa;font-size:13px;line-height:1.7'>
-                            Your SQL logic is also incorrect.<br>
-                            No XP awarded. Streak not updated. Try writing it yourself.
+                    <div style='background:#f8717115;border:2px solid #f87171;border-radius:10px;padding:16px;margin-top:10px'>
+                        <div style='display:flex;align-items:center;gap:10px;margin-bottom:10px'>
+                            <span style='background:#f87171;color:#080c14;font-size:11px;font-weight:800;padding:4px 12px;border-radius:4px;letter-spacing:1px'>⚠ AI / COPY-PASTE DETECTED</span>
                         </div>
+                        <div style='color:#f87171;font-size:14px;font-weight:700'>❌ Streak reset to 0. No XP awarded. Write it yourself.</div>
                     </div>
                     """, unsafe_allow_html=True)
                 # Reset streak on paste regardless
@@ -974,15 +1092,26 @@ elif st.session_state.stage == "practice" and st.session_state.practice_mode == 
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Auto move to next question after 2 seconds if correct, else stay
+            # Next question buttons
             if is_correct:
                 if st.button("Next Question →"): next_q()
             else:
-                if st.button("Try Again on New Question (costs Skip XP)"):
-                    if spend_xp(XP_COST["skip"]):
+                # Wrong answer — next question is FREE, no XP needed, stay on same level
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    if st.button("✍️ Try Again — Same Question"):
+                        st.session_state.user_sql = ""
+                        st.session_state.feedback = None
+                        st.session_state.query_ran = False
+                        st.session_state.query_result = None
+                        st.session_state.query_error = None
+                        st.session_state.hint_used = False
+                        st.session_state.answer_used = False
+                        st.session_state.q_start_time = datetime.now()
+                        st.rerun()
+                with col_r2:
+                    if st.button("→ Next Question (Free)"):
                         next_q()
-                    else:
-                        st.warning(f"Need {XP_COST['skip']} XP to skip. Keep practicing this question!")
 
     with tab_dash:
         dashboard_view()
